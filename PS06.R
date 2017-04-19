@@ -221,8 +221,12 @@ sg.int.parallel(test.f1, lower = c(-1, -1), upper = c(1, 1), dim = 2)
 sg.int.parallel(test.f2, lower = c(-2, -2, -2), upper = c(2, 2, 2), dim = 3)
 sg.int.parallel(test.f3, lower = c(-1, -1, -1, -1), upper = c(1, 1, 1, 1), dim = 4) 
 
-# Load the package "cubature" to use the function adaptIntegrate()
-library(cubature)
+    ### Goal 5: Package cubature
+    # Load the package "cubature" to use the function adaptIntegrate()
+    library(cubature)
+    ?adaptIntegrate
+    # we can use this function in unit-testing:
+
 # test.f1 with sg.int(), sg.int.multidim(), sg.int.parallel
 expect_equal(sg.int(test.f1, lower = c(-1, -1), upper = c(1, 1)),
              adaptIntegrate(f=test.f1, lowerLimit = c(-1, -1), upperLimit = c(1, 1))$integral,
@@ -263,22 +267,54 @@ expect_error(sg.int.parallel(test.f3, lower = c(-1, -1, -1, -1), upper = c(1, 1,
 # Goal 4: Measure Speed
 library(microbenchmark)
 
-microbenchmark(
+# using 2D example
+basic.vs.multidim <- microbenchmark(
   "sg.int" = sg.int(g = test.f1, lower = c(-1, -1), upper = c(1, 1)),
   "sg.int.multidim" = sg.int.multidim(g = test.f1, lower = c(-1, -1), upper = c(1, 1), dim=2),
-  "sg.int.parallel" = sg.int.parallel(g = test.f1, lower = c(-1, -1), upper = c(1, 1), dim=2),
-  times = 200)
-
-microbenchmark(
-  "sg.int" = sg.int(g = test.f1, lower = c(-1, -1), upper = c(1, 1)),
-  "sg.int.parallel" = sg.int.multidim(g = test.f1, lower = c(-1, -1), upper = c(1, 1), dim=2),
-  times = 200)
-
-microbenchmark(
-  "sg.int.parallel" = sg.int.multidim(g = test.f2, lower = c(-1, -1, -1), upper = c(1, 1, 1), dim=3),
   times = 100)
+basic.vs.multidim
+plot(basic.vs.multidim)
+
+basic.vs.parallel <- microbenchmark(
+  "sg.int" = sg.int(g = test.f1, lower = c(-1, -1), upper = c(1, 1)),
+  "sg.int.parallel" = sg.int.parallel(g = test.f1, lower = c(-1, -1), upper = c(1, 1), dim=2),
+  times = 100)
+basic.vs.parallel
+plot(basic.vs.parallel)
+
+multidim.vs.parallel <- microbenchmark(
+  "sg.int.multidim" = sg.int.multidim(g = test.f1, lower = c(-1, -1), upper = c(1, 1), dim=2),
+  "sg.int.parallel" = sg.int.parallel(g = test.f1, lower = c(-1, -1), upper = c(1, 1), dim=2),
+  times = 100)
+multidim.vs.parallel
+plot(multidim.vs.parallel)
+
+# using 4D example 
+multidim.vs.parallel.4d <- microbenchmark(
+  "sg.int.multidim" = sg.int.multidim(test.f3, lower = c(-1, -1, -1, -1), upper = c(1, 1, 1, 1), dim = 4),
+  "sg.int.parallel" = sg.int.parallel(test.f3, lower = c(-1, -1, -1, -1), upper = c(1, 1, 1, 1), dim = 4),
+  times = 100)
+multidim.vs.parallel.4d
+plot(multidim.vs.parallel.4d)
+
 
 # Goal 5: Package cubature
-library(cubature)
+# cf. see above (Goal 3: Unit testing)
+# integrate the same functions and see if the result is faster:
 
+# Speed testing: 
+# sg.int.multidim vs. adaptIntegrate: our function takes a lot more time (slower...)
+multidim.vs.adaptIntegrate <- microbenchmark(
+  "sg.int.multidim" = sg.int.multidim(test.f3, lower = c(-1, -1, -1, -1), upper = c(1, 1, 1, 1), dim = 4),
+  "adaptIntegrate" = adaptIntegrate(f=test.f3, lowerLimit = c(-1, -1, -1, -1), upperLimit = c(1, 1, 1, 1)),
+  times = 100)
+multidim.vs.adaptIntegrate
+plot(multidim.vs.adaptIntegrate)
 
+# sg.int.parallel vs. adaptIntegrate: our function takes a lot more time (much slower...)
+parallel.vs.adaptIntegrate <- microbenchmark(
+  "sg.int.parallel" = sg.int.parallel(test.f3, lower = c(-1, -1, -1, -1), upper = c(1, 1, 1, 1), dim = 4),
+  "adaptIntegrate" = adaptIntegrate(f=test.f3, lowerLimit = c(-1, -1, -1, -1), upperLimit = c(1, 1, 1, 1)),
+  times = 100)
+parallel.vs.adaptIntegrate
+plot(parallel.vs.adaptIntegrate)
