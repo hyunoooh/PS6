@@ -18,6 +18,14 @@ rm(list=ls())
 sg.int <- function(g,..., lower, upper){
   # load SparseGrid library
   require("SparseGrid")
+  
+  # validity test:
+  # if the length of lower and upper bounds are not equal, show the error message
+  if (length(lower) != length(upper)) stop("the length of lower and upper must be the same")
+  # if the length of lower and upper bounds are greater than 2, show the error message
+  if (length(lower) > 2) stop("Use sg.int.multidim() function, instead")
+  if (length(upper) > 2) stop("Use sg.int.multidim() function, instead")
+  
   # set lower bound of integration:
   # a numeric vector containing the largest integers of lower values
   lower <- floor(lower)
@@ -50,8 +58,8 @@ sg.int <- function(g,..., lower, upper){
   gx.sp <- apply(X = nodes, MARGIN = 1, FUN = g, ...)
   # multiply weights 
   val.sp <- gx.sp %*% weights
-  # return final values
-  val.sp
+  # return final numeric values
+  as.numeric(val.sp)
 }
 
 
@@ -61,14 +69,23 @@ sg.int.multidim <- function(g, ..., lower, upper, dim){
   # load SparseGrid library
   require("SparseGrid")
   
+  # validity checking:
+    # if the length of lower and upper bounds are not equal, show the error message
+    if (length(lower) != length(upper)) stop("the length of lower and upper must be the same")
+    # if lengths of lower and upper bounds are not equal to dimesion, show the error message
+    if (length(lower) != dim) stop("the length of lower must be equal to dim")
+    if (length(upper) != dim) stop("the length of upper must be equal to dim")
+    # if input dim is not "integer, greater than 0," show the error message
+    if (dim%%1 != 0 | dim <= 0) stop("dim must be integer, greater than 0")
+  
   # set lower bound of integration:
   # a numeric vector containing the largest integers of lower values
   lower <- floor(lower)
   # set upper bound of integration:
   # a numeric vector containing the smallest integers of upper values
   upper <- ceiling(upper)
-  # if any lower bound is greater than upper bound, show the error message
-  if (any(lower > upper)) stop("lower must be smaller than upper")
+    # if any lower bound is greater than upper bound, show the error message
+    if (any(lower > upper)) stop("lower must be smaller than upper")
   
   # create all lower/upper bounds of integration
   # because it's a list, we can use lapply function
@@ -90,16 +107,16 @@ sg.int.multidim <- function(g, ..., lower, upper, dim){
   
   # create nodes for combination of all points in integration
   # because it's a list, we can use lapply function
-  nodes.com <- lapply(1:nrow(gridss), function(x){gridss[x,] + sp.grid$nodes})
-  # create node for i by binding by rows
-  nodes <- rbind(nodes, nodes.com)  
+  nodes <- lapply(1:nrow(gridss), function(x){gridss[x,] + sp.grid$nodes})
+  # create node by binding by rows
+  nodes <- do.call(rbind, nodes)  
 
   # apply function g over each set of nodes
   gx.sp <- apply(X = nodes, MARGIN = 1, FUN = g, ...)
   # multiply weights 
   val.sp <- gx.sp %*% weights
-  # return final values
-  val.sp
+  # return final numeric values
+  as.numeric(val.sp)
 }
 
 ### Goal 2: Parallel
@@ -109,19 +126,30 @@ sg.int.parallel <- function(g, ..., lower, upper, dim){
   require("SparseGrid")
   require("parallel")
   
+  # calculate the number of cpu cores on the current host 
+  no_cores <- detectCores()
+  # initiate cluster
+  cl <- makeCluster(no_cores)
+  
+  # validity checking:
+    # if the length of lower and upper bounds are not equal, show the error message 
+    if (length(lower) != length(upper)) stop("the length of lower and upper must be the same")
+    # if lengths of lower and upper bounds are not equal to dimesion, show the error message
+    if (length(lower) != dim) stop("the length of lower must be equal to dim")
+    if (length(upper) != dim) stop("the length of upper must be equal to dim")
+    # if input dim is not "integer, greater than 0," show the error message
+    if (dim%%1 != 0 | dim <= 0) stop("dim must be integer, greater than 0")
+  
   # set lower bound of integration:
   # a numeric vector containing the largest integers of lower values
   lower <- floor(lower)
   # set upper bound of integration:
   # a numeric vector containing the smallest integers of upper values
   upper <- ceiling(upper)
-  # if any lower bound is greater than upper bound, show the error message
-  if (any(lower > upper)) stop("lower must be smaller than upper")
-  
-  # calculate the number of cpu cores on the current host 
-  no_cores <- detectCores()
-  # initiate cluster
-  cl <- makeCluster(no_cores)
+    
+  # validity checking:
+    # if any lower bound is greater than upper bound, show the error message
+    if (any(lower > upper)) stop("lower must be smaller than upper")
   
   # create all lower/upper bounds of integration
                 # parLappy applies operations of list parallelization using clusters
@@ -143,35 +171,112 @@ sg.int.parallel <- function(g, ..., lower, upper, dim){
   # create nodes for combination of all points in integration
   # because it's a list, we want to use lapply function;
   # parLappy applies operations of list parallelization using clusters
-  nodes.com <- parLapply(cl = cl, X = 1:nrow(gridss), fun = function(x){gridss[x,] + sp.grid$nodes})
-  # create node for i by binding by rows
-  nodes <- rbind(nodes, nodes.com)  
+  nodes <- parLapply(cl = cl, 
+                     X = 1:nrow(gridss), 
+                     fun = function(x){gridss[x,] + sp.grid$nodes})
+  # create nodes by binding by rows
+  require("plyr")
+  nodes <- do.call("rbind", nodes)
   
   # apply function g over each set of nodes
   # foy applying operations using clusters, we can use parApply
-  gx.sp <- parApply(cl = cl, X = nodes, MARGIN = 1, FUN = g, ...)
+  gx.sp <- parApply(cl = cl, 
+                    X = nodes, 
+                    MARGIN = 1, 
+                    FUN = g, ...)
   # multiply weights 
   val.sp <- gx.sp %*% weights
-  # return final values
-  val.sp
+  # Once we are done close the cluster so that resources 
+  # such as memory are returned to the operating system.
+  stopCluster(cl)
+  # return final value as numeric
+  as.numeric(val.sp)
 }
 
-# Goal 3: Unit Testing
+
+
+### Goal 3: Unit Testing
 library(testthat)
 
+# sample for testing
+# dimension = 2
 test.f1 <- function(x) x[1] + x[2]^2
-test.f2 <- function(x) (-2)*x[1] + (-4)*x[2]^2
-test.f3 <- function(x) x[1] + 2*x[2]^2 + 3*x[3]^3
-test.f4 <- function(x) 2*x[1] + 3*x[2]^2 + 4*x[3]^3 + x[4]^4
+# dimension = 3
+test.f2 <- function(x) x[1] + 2*x[2]^2 + 3*x[3]^3
+# dimension = 4
+test.f3 <- function(x) 2*x[1] + 3*x[2]^2 + 4*x[3]^3 + x[4]^4
 
+# test basic function: sg.int()
 sg.int(test.f1, lower = c(-1, -1), upper = c(1, 1))
-sg.int(test.f2, lower = c(-2, -2), upper = c(2, 2))
+# sg.int(test.f2, lower = c(-2, -2, -2), upper = c(2, 2, 2)) # wrong dimension >> error testing
+# sg.int(test.f3, lower = c(-1, -1, -1, -1), upper = c(1, 1, 1, 1))  # wrong dimension >> error testing
 
-sg.int.multidim(test.2, lower = c(-1, -1, -1), upper = c(1, 1, 1), dim = 3)
+# test integration function for multidimension: sg.int.multidim()
+sg.int.multidim(test.f1, lower = c(-1, -1), upper = c(1, 1), dim = 2)
+sg.int.multidim(test.f2, lower = c(-2, -2, -2), upper = c(2, 2, 2), dim = 3)
+sg.int.multidim(test.f3, lower = c(-1, -1, -1, -1), upper = c(1, 1, 1, 1), dim = 4)  
+
+# test integration function for parallelization: sg.int.parallel()
+sg.int.parallel(test.f1, lower = c(-1, -1), upper = c(1, 1), dim = 2)
+sg.int.parallel(test.f2, lower = c(-2, -2, -2), upper = c(2, 2, 2), dim = 3)
+sg.int.parallel(test.f3, lower = c(-1, -1, -1, -1), upper = c(1, 1, 1, 1), dim = 4) 
+
+# Load the package "cubature" to use the function adaptIntegrate()
+library(cubature)
+# test.f1 with sg.int(), sg.int.multidim(), sg.int.parallel
+expect_equal(sg.int(test.f1, lower = c(-1, -1), upper = c(1, 1)),
+             adaptIntegrate(f=test.f1, lowerLimit = c(-1, -1), upperLimit = c(1, 1))$integral,
+             tolerance = 0.0001)
+expect_equal(sg.int.multidim(test.f1, lower = c(-1, -1), upper = c(1, 1), dim = 2),
+             adaptIntegrate(f=test.f1, lowerLimit = c(-1, -1), upperLimit = c(1, 1))$integral,
+             tolerance = 0.0001)
+expect_equal(sg.int.parallel(test.f1, lower = c(-1, -1), upper = c(1, 1), dim = 2),
+             adaptIntegrate(f=test.f1, lowerLimit = c(-1, -1), upperLimit = c(1, 1))$integral,
+             tolerance = 0.0001)
+
+# test.f2 and test.f3 with sg.int.multidim(), sg.int.parallel()
+expect_equal(sg.int.multidim(test.f2, lower = c(-2, -2, -2), upper = c(2, 2, 2), dim = 3),
+             adaptIntegrate(f=test.f2, lowerLimit = c(-2, -2, -2), upperLimit = c(2, 2, 2))$integral,
+             tolerance = 0.0001)
+expect_equal(sg.int.multidim(test.f3, lower = c(-1, -1, -1, -1), upper = c(1, 1, 1, 1), dim = 4),
+             adaptIntegrate(f=test.f3, lowerLimit = c(-1, -1, -1, -1), upperLimit = c(1, 1, 1, 1))$integral,
+             tolerance = 0.0001)
+
+expect_equal(sg.int.parallel(test.f2, lower = c(-2, -2, -2), upper = c(2, 2, 2), dim = 3),
+             adaptIntegrate(f=test.f2, lowerLimit = c(-2, -2, -2), upperLimit = c(2, 2, 2))$integral,
+             tolerance = 0.0001)
+expect_equal(sg.int.parallel(test.f3, lower = c(-1, -1, -1, -1), upper = c(1, 1, 1, 1), dim = 4),
+             adaptIntegrate(f=test.f3, lowerLimit = c(-1, -1, -1, -1), upperLimit = c(1, 1, 1, 1))$integral,
+             tolerance = 0.0001)
+
+# error testing
+expect_error(sg.int(test.f2, lower = c(-2, -2, -2), upper = c(2, 2, 2))) # lengths do not match
+expect_error(sg.int(test.f3, lower = c(-1, -1, -1, -1), upper = c(1, 1, 1, 1))) # wrong dimension
+expect_error(sg.int.parallel(test.f2, lower = c(-2, -2), upper = c(2, 2), dim = 3)) # lengths do not match
+expect_error(sg.int.parallel(test.f2, lower = c(-2, -2), upper = c(2, 2), dim = 4.5)) # wrong value for dim
+expect_error(sg.int.parallel(test.f3, lower = c(-1, -1, -1, -1), upper = c(1, 1), dim = 4)) # length and dim do not match
+expect_error(sg.int.parallel(test.f3, lower = c(-1, -1, -1, -1), upper = c(1, 1, 1, 1), dim = "4")) # dim is not numeric
+
+
 
 
 # Goal 4: Measure Speed
 library(microbenchmark)
+
+microbenchmark(
+  "sg.int" = sg.int(g = test.f1, lower = c(-1, -1), upper = c(1, 1)),
+  "sg.int.multidim" = sg.int.multidim(g = test.f1, lower = c(-1, -1), upper = c(1, 1), dim=2),
+  "sg.int.parallel" = sg.int.parallel(g = test.f1, lower = c(-1, -1), upper = c(1, 1), dim=2),
+  times = 200)
+
+microbenchmark(
+  "sg.int" = sg.int(g = test.f1, lower = c(-1, -1), upper = c(1, 1)),
+  "sg.int.parallel" = sg.int.multidim(g = test.f1, lower = c(-1, -1), upper = c(1, 1), dim=2),
+  times = 200)
+
+microbenchmark(
+  "sg.int.parallel" = sg.int.multidim(g = test.f2, lower = c(-1, -1, -1), upper = c(1, 1, 1), dim=3),
+  times = 100)
 
 # Goal 5: Package cubature
 library(cubature)
