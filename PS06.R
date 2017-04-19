@@ -7,7 +7,13 @@
 
 rm(list=ls())
 
-# Goal 1: Increase Dimensionality
+# We want to find the area under the curve (default = one dimension)
+# We want to find the volumn under a multi-dimensional hyperplane 
+# (increase dimensionality >> multiple dinemsions)
+
+
+### Goal 0: Add comments to the integration function
+# default = one dimension
 
 sg.int <- function(g,..., lower, upper){
   # load SparseGrid library
@@ -43,35 +49,84 @@ sg.int <- function(g,..., lower, upper){
   # apply function over each set of nodes
   gx.sp <- apply(X = nodes, MARGIN = 1, FUN = g, ...)
   # multiply weights 
-  val.sp <- gx.sp %*%weights
+  val.sp <- gx.sp %*% weights
   # return final values
   val.sp
 }
 
-# Goal 2: Parallel
 
-sg.int.parallel <- function(g,..., lower, upper, dim){
-  # load SparseGrid library; load parallel library
+### Goal 1: Increase Dimensionality
+
+sg.int.multidim <- function(g, ..., lower, upper, dim){
+  # load SparseGrid library
   require("SparseGrid")
-  require("parallel")
-  # calculate the number of cpu cores
-  no_cores <- detectCores()
-  # Initiate cluster
-  cl <- makeCluster(spec = no_cores)
-
+  
   # set lower bound of integration:
   # a numeric vector containing the largest integers of lower values
   lower <- floor(lower)
   # set upper bound of integration:
   # a numeric vector containing the smallest integers of upper values
   upper <- ceiling(upper)
-    # if any lower bound is greater than upper bound, show the error message
+  # if any lower bound is greater than upper bound, show the error message
   if (any(lower > upper)) stop("lower must be smaller than upper")
-
+  
   # create all lower/upper bounds of integration
-  all.bounds <- parLapply(cl, 1:dim, function(x){
-                           seq(lower[x], upper[x]-1, by=1)
-                           })
+  # because it's a list, we can use lapply function
+  all.bounds <- lapply(1:dim, function(x){seq(lower[x], upper[x]-1, by=1)})
+  # create a matrix of all combinations of variables
+  gridss <- as.matrix(expand.grid(all.bounds))
+  
+  # create integration grid with the least number of nodes
+  sp.grid <- createIntegrationGrid(type = 'KPU', dimension = dim, k = 5 )
+                                # KPU is a nested rule for unweighted integral over [0,1]
+                                # dimension of integration is user input
+                                # k is accuracy level. 
+  
+  # create nodes for lower bounds
+  nodes <- gridss[1,] + sp.grid$nodes
+  # create weights for lower bounds using weights in sp.grid
+  # we need to create weight values as many as number of rows of gridss
+  weights <- rep(sp.grid$weights, nrow(gridss))
+  
+  # create nodes for combination of all points in integration
+  # because it's a list, we can use lapply function
+  nodes.com <- lapply(1:nrow(gridss), function(x){gridss[x,] + sp.grid$nodes})
+  # create node for i by binding by rows
+  nodes <- rbind(nodes, nodes.com)  
+
+  # apply function g over each set of nodes
+  gx.sp <- apply(X = nodes, MARGIN = 1, FUN = g, ...)
+  # multiply weights 
+  val.sp <- gx.sp %*% weights
+  # return final values
+  val.sp
+}
+
+### Goal 2: Parallel
+
+sg.int.parallel <- function(g, ..., lower, upper, dim){
+  # load SparseGrid library; load parallel library
+  require("SparseGrid")
+  require("parallel")
+  
+  # set lower bound of integration:
+  # a numeric vector containing the largest integers of lower values
+  lower <- floor(lower)
+  # set upper bound of integration:
+  # a numeric vector containing the smallest integers of upper values
+  upper <- ceiling(upper)
+  # if any lower bound is greater than upper bound, show the error message
+  if (any(lower > upper)) stop("lower must be smaller than upper")
+  
+  # calculate the number of cpu cores on the current host 
+  no_cores <- detectCores()
+  # initiate cluster
+  cl <- makeCluster(no_cores)
+  
+  # create all lower/upper bounds of integration
+                # parLappy applies operations of list parallelization using clusters
+  all.bounds <- parLapply(cl, 1:dim, 
+                          function(x){seq(lower[x], upper[x]-1, by=1)})
   # create a matrix of all combinations of variables
   gridss <- as.matrix(expand.grid(all.bounds))
   
@@ -80,34 +135,45 @@ sg.int.parallel <- function(g,..., lower, upper, dim){
                                   # KPU is a nested rule for unweighted integral over [0,1]
                                   # dimension of integration is user input
                                   # k is accuracy level. 
-  # create nodes for lower bounds
-  nodes <- parLapply(cl, 1:nrow(gridss), function(x){
-                       gridss[x,]+sp.grid$nodes
-                     })
+  
   # create weights for lower bounds using weights in sp.grid
   # we need to create weight values as many as number of rows of gridss
   weights <- rep(sp.grid$weights, nrow(gridss))
   
-  ######## 
   # create nodes for combination of all points in integration
-  for (i in 2:nrow(gridss)){
-    # create node for i by binding by rows
-    nodes <- rbind(nodes, gridss[i,]+sp.grid$nodes)  
-    # create weights for combination i
-    weights <- c(weights, sp.grid$weights)
-  }
-  # apply function over each set of nodes
-  gx.sp <- apply(X = nodes, MARGIN = 1, FUN = g, ...)
+  # because it's a list, we want to use lapply function;
+  # parLappy applies operations of list parallelization using clusters
+  nodes.com <- parLapply(cl = cl, X = 1:nrow(gridss), fun = function(x){gridss[x,] + sp.grid$nodes})
+  # create node for i by binding by rows
+  nodes <- rbind(nodes, nodes.com)  
+  
+  # apply function g over each set of nodes
+  # foy applying operations using clusters, we can use parApply
+  gx.sp <- parApply(cl = cl, X = nodes, MARGIN = 1, FUN = g, ...)
   # multiply weights 
-  val.sp <- gx.sp %*%weights
+  val.sp <- gx.sp %*% weights
   # return final values
   val.sp
 }
 
 # Goal 3: Unit Testing
-# Goal 4: Measure Speed
-# Goal 5: Package cubature
-
-# 
 library(testthat)
+
+test.f1 <- function(x) x[1] + x[2]^2
+test.f2 <- function(x) (-2)*x[1] + (-4)*x[2]^2
+test.f3 <- function(x) x[1] + 2*x[2]^2 + 3*x[3]^3
+test.f4 <- function(x) 2*x[1] + 3*x[2]^2 + 4*x[3]^3 + x[4]^4
+
+sg.int(test.f1, lower = c(-1, -1), upper = c(1, 1))
+sg.int(test.f2, lower = c(-2, -2), upper = c(2, 2))
+
+sg.int.multidim(test.2, lower = c(-1, -1, -1), upper = c(1, 1, 1), dim = 3)
+
+
+# Goal 4: Measure Speed
+library(microbenchmark)
+
+# Goal 5: Package cubature
+library(cubature)
+
 
