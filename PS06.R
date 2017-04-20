@@ -318,3 +318,47 @@ parallel.vs.adaptIntegrate <- microbenchmark(
   times = 100)
 parallel.vs.adaptIntegrate
 plot(parallel.vs.adaptIntegrate)
+
+
+
+### Additional Goal: Finding maximum
+
+# input given function
+# task 1: with x
+task.fun.1 <- function(x) {
+  sin((x[1]^2)/2 - ((x[2]^2)/4)*cos(2*x[1] - exp(x[2])))
+}
+
+# optimization based on "L-BFGS-B" method
+# The code for method "L-BFGS-B" is based on Fortran code 
+# by Zhu, Byrd, Lu-Chen and Nocedal obtained from Netlib 
+# (file ‘opt/lbfgs_bcm.shar’: another version is in ‘toms/778’).
+max.fun.1 <- optim(par = c(2, 1), fn = task.fun,
+                 lower = c(-1, -1), upper = c(3, 3),
+                 method = "L-BFGS-B",
+                 control = list(fnscale = -1))
+# check what's in the function
+max.fun.1$par
+max.fun.1$value
+max.fun.1$counts
+max.fun.1$convergence
+max.fun.1$message
+
+# input given function
+# task 2: with x, y
+task.fun.2 <- function(x, y) {
+  sin((x^2)/2 - ((y^2)/4)*cos(2*x - exp(y)))
+}
+
+# optimize over x for y within the interval [-1, 3]
+task.slice.y <- lapply(seq(-1, 3, by=0.0001),
+                      function(z){
+                        optimize(f = task.fun.2, y = z,
+                                 lower = -1, upper = 3,
+                                 maximum = TRUE)$maximum
+                      })
+# find the maximum
+task.maximum <- unlist(task.slice.y)
+head(task.maximum, 100)
+which.max(task.maximum)
+task.maximum[which.max(task.maximum)]
